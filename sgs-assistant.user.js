@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀助手
 // @namespace    https://github.com/qq398768650/sgs-assistant
-// @version      0.3.0
+// @version      0.3.1
 // @description  透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。
 // @author       qq398768650
 // @match        *://*.sanguosha.com/*
@@ -1029,8 +1029,8 @@
     deckEnabled: true,
     peekEnabled: true,
     peekOverlay: true,
-    rewardsEnabled: false,
-    claimsEnabled: false,
+    rewardsEnabled: true,
+    claimsEnabled: true,
     popupsEnabled: false,
     popupMode: 'safe',
     rogueEnabled: true,
