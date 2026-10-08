@@ -6,7 +6,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const OWNER = 'qq398768650';
 const REPO = 'sgs-assistant';
 const BRANCH = 'main';
-const RAW = `https://fastly.jsdelivr.net/gh/${OWNER}/${REPO}@${BRANCH}`;
+const RAW = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}`;
 
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
 const VERSION = manifest.version;

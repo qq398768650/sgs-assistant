@@ -128,13 +128,13 @@ node build.mjs
 ### 安装（使用者）
 
 1. 浏览器装 Tampermonkey
-2. 打开 `https://fastly.jsdelivr.net/gh/<owner>/sgs-assistant@main/sgs-assistant.user.js`，
+2. 打开 `https://raw.githubusercontent.com/<owner>/sgs-assistant/main/sgs-assistant.user.js`，
    Tampermonkey 会弹出安装页 → 安装
    （或在 Tampermonkey 面板「实用工具 → 从 URL 安装」填这个地址）
 
-> 构建默认用 **jsDelivr（fastly 节点）** 而不是 `raw.githubusercontent.com`：后者在国内网络经常不通，
-> 会导致脚本拉不到字典、也检查不到更新。若你的网络能直连 raw，可把 `build.mjs` 顶部的 `RAW` 换回
-> `https://raw.githubusercontent.com/<owner>/<repo>/<branch>`。
+> 该地址要求浏览器能访问 GitHub（挂代理即可，`github.com`/`raw.githubusercontent.com` 国内直连不通）。
+> 若没有代理，可把 `build.mjs` 顶部的 `RAW` 换成 `https://fastly.jsdelivr.net/gh/<owner>/<repo>@main`
+> ——但 jsDelivr 有约 12 小时分支缓存，发版后需 purge 才立即生效。
 
 ### 自动更新
 

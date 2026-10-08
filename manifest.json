@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "三国杀助手",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。",
   "permissions": ["storage"],
   "host_permissions": ["*://*.sanguosha.com/*"],
