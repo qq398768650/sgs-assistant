@@ -1288,6 +1288,22 @@
     var now = Date.now();
     if (now - c.last < c.cooldownMs) return;
 
+    // 0) 每日签到（登录签到领奖：Gwt.U() 发 ClientLoginCheckinPrizeReq）
+    var login = MGR.one('Gwt');
+    if (login && typeof login.U === 'function') {
+      try {
+        var signed = (typeof login.TodaySignRewardIsReceived === 'function')
+          ? login.TodaySignRewardIsReceived()
+          : !!login.TodaySignRewardIsReceived;
+        if (!signed) {
+          login.U();
+          c.last = now; c.hits++;
+          AUTO.log('claim', '每日签到');
+          return;
+        }
+      } catch (e) {}
+    }
+
     // 0) 邮件（不依赖任务/活动管理器）
     if (tickMail(c)) { c.last = now; c.hits++; return; }
 

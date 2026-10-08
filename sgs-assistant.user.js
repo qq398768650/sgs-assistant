@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀助手
 // @namespace    https://github.com/qq398768650/sgs-assistant
-// @version      0.3.2
+// @version      0.3.3
 // @description  透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。
 // @author       qq398768650
 // @match        *://*.sanguosha.com/*
@@ -2853,6 +2853,22 @@
     if (!c.enabled || !L.ok()) return;
     var now = Date.now();
     if (now - c.last < c.cooldownMs) return;
+
+    // 0) 每日签到（登录签到领奖：Gwt.U() 发 ClientLoginCheckinPrizeReq）
+    var login = MGR.one('Gwt');
+    if (login && typeof login.U === 'function') {
+      try {
+        var signed = (typeof login.TodaySignRewardIsReceived === 'function')
+          ? login.TodaySignRewardIsReceived()
+          : !!login.TodaySignRewardIsReceived;
+        if (!signed) {
+          login.U();
+          c.last = now; c.hits++;
+          AUTO.log('claim', '每日签到');
+          return;
+        }
+      } catch (e) {}
+    }
 
     // 0) 邮件（不依赖任务/活动管理器）
     if (tickMail(c)) { c.last = now; c.hits++; return; }
