@@ -1304,6 +1304,23 @@
       } catch (e) {}
     }
 
+    // 0) 砍元宝树（lJt：有砍树道具且未到上限时使用；免费道具，不消耗元宝）
+    var tree = MGR.one('lJt');
+    if (tree && typeof tree.ReqJbpTreeUsing === 'function' && typeof tree.HasKanShuProp === 'function') {
+      try {
+        var kanLimit = (typeof tree.ReachedKanShuLimit === 'function') ? tree.ReachedKanShuLimit() : !!tree.ReachedKanShuLimit;
+        if (!kanLimit && tree.HasKanShuProp()) {
+          var kanId = (typeof tree.GetKanShuPropID === 'function') ? tree.GetKanShuPropID() : 0;
+          if (kanId) {
+            tree.ReqJbpTreeUsing(kanId);
+            c.last = now; c.hits++;
+            AUTO.log('claim', '砍元宝树');
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+
     // 0) 邮件（不依赖任务/活动管理器）
     if (tickMail(c)) { c.last = now; c.hits++; return; }
 

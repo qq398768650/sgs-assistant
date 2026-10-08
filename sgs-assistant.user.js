@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀助手
 // @namespace    https://github.com/qq398768650/sgs-assistant
-// @version      0.3.3
+// @version      0.3.4
 // @description  透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。
 // @author       qq398768650
 // @match        *://*.sanguosha.com/*
@@ -2866,6 +2866,23 @@
           c.last = now; c.hits++;
           AUTO.log('claim', '每日签到');
           return;
+        }
+      } catch (e) {}
+    }
+
+    // 0) 砍元宝树（lJt：有砍树道具且未到上限时使用；免费道具，不消耗元宝）
+    var tree = MGR.one('lJt');
+    if (tree && typeof tree.ReqJbpTreeUsing === 'function' && typeof tree.HasKanShuProp === 'function') {
+      try {
+        var kanLimit = (typeof tree.ReachedKanShuLimit === 'function') ? tree.ReachedKanShuLimit() : !!tree.ReachedKanShuLimit;
+        if (!kanLimit && tree.HasKanShuProp()) {
+          var kanId = (typeof tree.GetKanShuPropID === 'function') ? tree.GetKanShuPropID() : 0;
+          if (kanId) {
+            tree.ReqJbpTreeUsing(kanId);
+            c.last = now; c.hits++;
+            AUTO.log('claim', '砍元宝树');
+            return;
+          }
         }
       } catch (e) {}
     }
