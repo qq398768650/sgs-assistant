@@ -3,7 +3,7 @@
 > 来源：`F:\Work2026\SGS_Xiaochao\xiaochao_orign.js`（803,637 字节，2883 行）
 > 作者：孤独尊 / haoming，`@namespace http://home.ustc.edu.cn/~haoming`，MIT
 > 基线：小麦原版打小抄（`https://goka.top:8080/sgs/script.user.js`）
-> 本轮已完整解出核心代码，见 `runs/xc-deob.js`（11,212 行）
+> 本轮已完整解出核心代码，见 `runs/xc-deob.js`（669 KB）
 
 ---
 
@@ -17,7 +17,7 @@
 | L1998–L2833 | `mainScript()` —— `resized`(尺寸 hook) / `Exit()` / `Init(SGS)`；`Init` 内只有 `setLayout()`(226 行) 与 `loadConfig_w()`(456 行) |
 | L2834 | jsjiami.com.v7 混淆块 = `Init()` 的返回值，**全部核心逻辑** |
 
-**混淆块已还原**：6686 个字符串调用中 6685 个解出，产物 `runs/xc-deob.js` + `runs/xc-strings.json`。
+**混淆块已还原**：8243 个字符串调用全部解出（3 个未解），产物 `runs/xc-deob.js` + `runs/xc-strings.json`（脚本 `runs/xc-deob-run.js`）。
 解混淆方法：jsjiami v7 标准结构 —— `function _0x24a3(idx, key)`，索引偏移 `0x15f`，字符串表由 `_0xe984()` 返回（6689 项），解码 = `RC4(base64decode(table[idx-0x15f]), key)`。
 **注意**：只有 `_0x24a3` 是解码器；`_0x303ff2` 是属性代理器、`_0x41c852` 是属性过滤器，均非解码函数。
 
@@ -161,8 +161,9 @@ console.log("%o","--------[Received client"+(s.FromSocket2?"2":"1")+"]"+s.ClassN
 | 21 | 皮肤收集进度（朱砂合成） | 独立窗口 | ⬜ | 纯读取 |
 | 22 | 百胜战功进度 | 独立窗口 | ⬜ | 纯读取 |
 | 23 | 道具获取记录 | `hintQ` | ⬜ | 记录 + 清空 |
-| 24 | 代码观星 | 内置 | ⬜ | 活动公告解析 |
-| 25 | 布局配置（左顶右底 / 拖拽 / 持久化） | `layoutTemplate` | ⬜ | 面板已存在，未接布局系统 |
+| 24 | 一键代码观星 | 工具区 `#guanxing` | ⬜ | 汇总在售/活动/充值消费/夺宝/祈福/兑换/新品皮肤 → `json2html` 独立窗口；实现已截取，见 `OLD-PLUGIN-GUANXING-SHANHETU.md` §1 |
+| 25 | 山河图手册 | 工具区 `#shanhetu` | ⬜ | `SGS.shtHTML(rogejson)` 生成《加点模拟器/BOSS查询》网页，左键弹窗/右键下载 .html；实现已截取，见 `OLD-PLUGIN-GUANXING-SHANHETU.md` §2 |
+| 26 | 布局配置（左顶右底 / 拖拽 / 持久化） | `layoutTemplate` | ⬜ | 面板已存在，未接布局系统 |
 
 ### 5.6 明确不还原
 
@@ -177,7 +178,8 @@ console.log("%o","--------[Received client"+(s.FromSocket2?"2":"1")+"]"+s.ClassN
 | 9.5 折充值 | 付费 |
 | 界小抄激活码 | 付费授权 |
 | 邀请互助 | 请求作者服务器 |
-| 三国锦绣 / 山河图手册网页 | 作者外部站点 |
+| 三国锦绣搭配网页 | 作者外部站点 |
+| 山河图手册的「在线版」 | 作者外部站点；本地生成版（`SGS.shtHTML`）已截取，见 `OLD-PLUGIN-GUANXING-SHANHETU.md` §2 |
 | 皮肤壁纸（`getskinQ`） | 依赖微端，浏览器版无意义 |
 
 ### 5.7 已具备的地基（旧插件没有或更弱）
@@ -225,10 +227,10 @@ console.log("%o","--------[Received client"+(s.FromSocket2?"2":"1")+"]"+s.ClassN
 
 | 文件 | 内容 |
 | --- | --- |
-| `runs/xc-code.js` | 旧插件明文部分（L1–L2833） |
-| `runs/xc-blob.js` | L2834 原始混淆体（619,799 字符） |
-| `runs/xc-deob.js` | **还原后的核心代码（11,212 行，658 KB）** |
-| `runs/xc-strings.json` | 6685 条 `index|key → 明文` 映射 |
-| `runs/xc-deob-cn.txt` | 还原后代码里的 467 个中文串 |
+| `runs/xc-deob.js` | **还原后的核心代码（本轮重生成，669 KB）** |
+| `runs/xc-strings.json` | 8243 条 `index → 明文` 映射 |
+| `runs/xc-deob-cn.txt` | 还原后代码里的 177 个中文串 |
 | `runs/xc-deob.log` | 解混淆过程日志 |
-| `runs/xc-run.js` / `xc-dec2.js` / `xc-deob.js` | 解混淆脚本（可复跑） |
+| `runs/xc-deob-run.js` | 解混淆脚本（可复跑：`node runs/xc-deob-run.js`） |
+| `sgs-assistant/docs/OLD-PLUGIN-GUANXING-SHANHETU.md` | **一键代码观星 / 山河图手册 两段实现截取** |
+| `runs/xc-gen-doc.js` | 上述截取文档的生成脚本 |

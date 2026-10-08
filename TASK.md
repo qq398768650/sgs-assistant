@@ -382,15 +382,18 @@ after  {CanAward:false, HasAward:true}   ← 奖励到账
 | L1998–L2833 | `mainScript()` → `Init(SGS)`，内含 `setLayout()` / `loadConfig_w()` |
 | L2834 | jsjiami.com.v7 混淆体（619,799 字符）= `Init()` 的返回值，**全部核心逻辑** |
 
-**已完整解混淆** → `runs/xc-deob.js`（11,212 行 / 658 KB），6686 个字符串调用解出 6685 个。
+**已完整解混淆** → `runs/xc-deob.js`（本轮重生成，669 KB），8243 个字符串调用解出 8243 个（3 个未解）。
+（上一会话的产物随 `runs/` 丢失，本轮用 `runs/xc-deob-run.js` 重建。）
 
-方法：jsjiami v7 标准结构 —— `function _0x24a3(idx, key)`，索引偏移 `0x15f`，字符串表由 `_0xe984()` 返回（6689 项），解码 = `RC4(base64decode(table[idx-0x15f]), key)`。
-两个易踩的坑：
+方法：jsjiami v7 标准结构 —— `function _0x24a3(idx, key)`，索引偏移 `0x15f`，字符串表由 `_0xe984()` 返回（6692 项），解码 = `RC4(base64decode(table[idx-0x15f]), key)`。
+三个易踩的坑：
 1. `_0x303ff2` / `_0x41c852` **不是解码器**（分别是属性代理与属性过滤器），只有 `_0x24a3` 是
-2. 混淆体执行会走到依赖 `Laya` 的代码而抛错，须**利用函数声明提升**在 blob 之前把 `_0x24a3` / `_0xe984` 取出（`runs/xc-deob.js` 已这么做）
+2. 字符串表需先按前导 IIFE 的 magic-number 自检旋转（本轮实测 = `push(shift)` 146 次，即命中 `0x2a983` 那次）；不旋转则解出乱码
+3. 解码器有 600+ 个别名，且存在**别名套别名**（`_0x18245f=_0x51cf3c`、`_0x51cf3c=_0x24a3`），须做**传递闭包**再替换调用点，否则只能解出 ~750 条
 
-复跑：`node runs/xc-deob.js`（输出 `xc-deob.js` / `xc-strings.json` / `xc-deob.log`）。
-功能全清单与技术对照见 `sgs-assistant/docs/OLD-PLUGIN-FEATURES.md`。
+复跑：`node runs/xc-deob-run.js`（输出 `runs/xc-deob.js` / `xc-strings.json` / `xc-deob.log` / `xc-deob-cn.txt`）。
+功能全清单与技术对照见 `sgs-assistant/docs/OLD-PLUGIN-FEATURES.md`；
+**「一键代码观星」「山河图手册」两段实现的截取**见 `sgs-assistant/docs/OLD-PLUGIN-GUANXING-SHANHETU.md`。
 
 ---
 
@@ -799,7 +802,9 @@ EquipCards / JudgeCards（本就公开） / IsSelf / IsDead / CanViewHandCard / 
 
 11. 战绩胜率统计窗口
 12. 皮肤台词 / 收集进度 / 百胜战功
-13. 道具获取记录 / 代码观星 / 布局配置
+13. 道具获取记录 / 布局配置
+14. 一键代码观星 —— 旧插件实现已截取，见 `docs/OLD-PLUGIN-GUANXING-SHANHETU.md` §1（数据来自 `Config_w.sgs`，纯读取）
+15. 山河图手册 —— 旧插件实现已截取，见 `docs/OLD-PLUGIN-GUANXING-SHANHETU.md` §2（`SGS.shtHTML` + `rogejson`，左键弹窗/右键下载 .html）
 
 ### P4 — 对局辅助（需谨慎）
 
@@ -828,3 +833,35 @@ EquipCards / JudgeCards（本就公开） / IsSelf / IsDead / CanViewHandCard / 
 - **`copy()` 被游戏页面占用**，DevTools 里直接调用会报错；用 `console.log(JSON.stringify(...))` 或走文件。
 - **PowerShell here-string 回显会污染输出**，写文件时把命令与回显分开；`$args` 是自动变量，脚本里别用它当变量名。
 - **用户对空转零容忍**：思考区不要写"好/执行/写"这类零信息自我催促词，得出动作立刻发工具调用。
+
+---
+
+## 七、接口定位（CDP 实测确认，2026-10-09）
+
+真实登录态下用 CDP 直连 Edge 调试端口逐个验证，均已落到 `src/inject.js` 的 `tickClaims`：
+
+| 功能 | 管理器.方法 | 说明 | 状态 |
+| --- | --- | --- | --- |
+| 每日签到 | `Gwt.U()` | 发 `ClientLoginCheckinPrizeReq`；`TodaySignRewardIsReceived()` 为 false 才发 | 已接 0.3.3 |
+| 砍元宝树 | `lJt.ReqJbpTreeUsing(lJt.GetKanShuPropID())` | 走 `proxy.L(CLIENT_CHOP_TREE_USING_REQ,{goodId})`（**不是** `proxy.A`）；条件 `HasKanShuProp() && !ReachedKanShuLimit`；免费道具 | 已接 0.3.4 |
+| 祈福（免费·旧） | `nJt.SendClientQifuReq(1)` | GoodsBaseID 内部取自 `gpt.I().BlessShopItemID`；条件 `K$t.CanFreeBless()`。**实测该活动窗口为 2025-04/05，早已结束** → 恒 false | 已接（条件性） |
+| 祈福（免费·新） | `d$t.sendQifuDrawReq(roundId, 1)` | 新版按 `infoDic.keys` 逐 roundId 判 `IsInBlessTime(id) && GetIsInServerDrawTimeById(id) && CanFreeBless(id)`；走 `proxy.L(CLIENT_QIFU_NEW_DRAW_REQ,{roundId,count})`。**2026-10 真机实测领到**：id=101 `CanFreeBless` 由 true 翻 false，回 `DbsCcUserGoodslistRep`（奖励到账） | 已接 0.3.5 |
+| 奇珍翻翻乐（免费翻牌） | `_Jt.SendOpenTreasureCard(sid, 0, 1, idx)` | 活动 85（`jv.CurCommonVO` 的 `background=Activity_fanfanle`，20261001~20261009）；条件 `TreasureInfoVo.IsCanFreeOpen`（= `Time_Next_Free <= 服务器时间`）且 `K$t.FreeBlessItemEnough` 且 `CurCommonVO.IsInActivityTime`。首充后每 24h 一次免费翻牌；`idx` 取首个未翻（`TreasureCardVos[i].GoodId==0`）。**2026-10 真机 dry-run 通过**，待免费刷新后自动翻 | 已接 0.3.5 |
+| 招募武将 | `uJt.SendClientUseGeneralDrawCardReq(goodsBaseId, drawType=1)` | 需 GoodsBaseId（免费招募卡 ID 未定）；`reservePool.Value` 为真时被拦截 | 未接 |
+| 公会敲鼓 | `mjt.SendGuildDrumUse(鼓ID, 数量)` | 消耗元宝（`VKt.I()._(t).yuanbao`）；`CanDrum()`/`LeftFreeDrumTimes`；当前不可用，属红线 | 未接 |
+
+### 旧插件（打小抄 v3.4.4.4）实测行为
+
+- 加载后 hook `Gwt.proxy.A`，跑其「每日任务 / 自动领奖 / 领取邮件」，实际发出的协议只有：
+  `ClientLoginCheckinPrizeReq`（签到）、`ClientJDGetInfoReq` / `ClientJDExchangeInfoReq`（军典）、
+  `encodeClientNewJDGetInfoReq` / `encodeClientNewJDExchangeInfoReq`（新军典）、`encodeClientDDZJDGetInfoReq`（斗地主军典）、
+  `CmsgClientGetTaskListRequest`（任务列表）—— **全部已被 sgs-assistant 覆盖**。
+- 砍树走 `proxy.L` 而非 `proxy.A`，所以第一轮 hook 没抓到（这就是「元宝树已经被砍了」却看不到协议的原因）。
+- 旧插件 UI 元素仍在 DOM（`#dailyQ` / `#mailQ` / `#taskQ` / `#switch`），勾选 change 即生效。
+
+### 调试方法备忘
+
+- 零依赖 CDP 客户端：`C:\Users\JXS\AppData\Local\Temp\opencode\cdp.mjs`（`list` / `eval <match> <js>` / `evalfile` / `mouse x y` / `shot` / `inject`）。
+- 启动调试实例：`msedge --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir=<temp> https://web.sanguosha.com/`
+- 管理器实例：`window.__SGS_MGR__.one('类名')`；发送 hook：包装 `Gwt.proxy.A`（`proxy.A(协议对象)`）与 `proxy.L(协议常量, 数据)`。
+- 坐标：`dpr=1`、canvas 与 stage 同尺寸时，页面坐标 == canvas 像素 == Laya stage 坐标。

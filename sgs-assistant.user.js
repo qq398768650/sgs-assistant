@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀助手
 // @namespace    https://github.com/qq398768650/sgs-assistant
-// @version      0.3.4
+// @version      0.3.5
 // @description  透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。
 // @author       qq398768650
 // @match        *://*.sanguosha.com/*
@@ -2883,6 +2883,62 @@
             AUTO.log('claim', '砍元宝树');
             return;
           }
+        }
+      } catch (e) {}
+    }
+
+    // 0) 祈福（nJt：可免费祈福时；GoodsBaseID 内部取自 gpt.BlessShopItemID）
+    var bless = MGR.one('K$t');
+    var blessMgr = MGR.one('nJt');
+    if (bless && blessMgr && typeof blessMgr.SendClientQifuReq === 'function') {
+      try {
+        var canFree = (typeof bless.CanFreeBless === 'function') ? bless.CanFreeBless() : !!bless.CanFreeBless;
+        if (canFree) {
+          blessMgr.SendClientQifuReq(1);
+          c.last = now; c.hits++;
+          AUTO.log('claim', '祈福（免费·旧）');
+          return;
+        }
+      } catch (e) {}
+    }
+
+    // 0) 祈福（新版 d$t：按 roundId 逐个判可免费；sendQifuDrawReq(roundId, count)）
+    //    实测 2026-10：id=101 freeOpen，CanFreeBless(101)=true → 领取后翻 false 并回 DbsCcUserGoodslistRep
+    var blessNew = MGR.one('d$t');
+    if (blessNew && typeof blessNew.sendQifuDrawReq === 'function' && blessNew.infoDic) {
+      try {
+        var bks = blessNew.infoDic.keys;
+        var bids = (bks && typeof bks.length === 'number' ? Array.prototype.slice.call(bks) : Object.keys(bks || {})).map(Number);
+        for (var bi = 0; bi < bids.length; bi++) {
+          var rid = bids[bi];
+          if (blessNew.IsInBlessTime(rid) && blessNew.GetIsInServerDrawTimeById(rid) && blessNew.CanFreeBless(rid)) {
+            blessNew.sendQifuDrawReq(rid, 1);
+            c.last = now; c.hits++;
+            AUTO.log('claim', '祈福（免费·新）round ' + rid);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 0) 奇珍翻翻乐（_Jt）：首充后每 24h 一次免费翻牌 → SendOpenTreasureCard(sid, 0, 1, idx)
+    //    实测 2026-10：活动 85（Activity_fanfanle，20261001~20261009）；领取后 TreasureInfoVo.Time_Next_Free 后移
+    var treasureMgr = MGR.one('_Jt');
+    if (treasureMgr && typeof treasureMgr.SendOpenTreasureCard === 'function') {
+      try {
+        var tInfo = treasureMgr.TreasureInfoVo;
+        var tJv = MGR.one('jv');
+        var tCv = tJv && tJv.CurCommonVO;
+        var tK = MGR.one('K$t');
+        var tEnough = !(tK && tK.FreeBlessItemEnough === false);
+        if (tInfo && tInfo.IsCanFreeOpen && tEnough && (!tCv || tCv.IsInActivityTime)) {
+          var tVos = treasureMgr.TreasureCardVos || [];
+          var tIdx = 0;
+          for (var vi = 0; vi < tVos.length; vi++) { if (!tVos[vi] || !tVos[vi].GoodId) { tIdx = vi; break; } }
+          treasureMgr.SendOpenTreasureCard(tInfo.SessionId, 0, 1, tIdx);
+          c.last = now; c.hits++;
+          AUTO.log('claim', '奇珍翻翻乐（免费翻牌）idx ' + tIdx);
+          return;
         }
       } catch (e) {}
     }
