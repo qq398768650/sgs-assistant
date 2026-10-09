@@ -138,8 +138,8 @@
     el.style.cssText = [
       'position:absolute', 'left:0', 'top:0', 'transform:translate(0px,0px)',
       'font:600 11px/1.45 "Microsoft YaHei",sans-serif',
-      'color:#ffe9b0', 'background:rgba(20,14,10,.88)',
-      'border:1px solid rgba(200,164,92,.75)', 'border-radius:4px',
+      'color:#ffe9b0', 'background:rgba(20,14,10,.5)',
+      'border:1px solid rgba(200,164,92,.5)', 'border-radius:4px',
       'padding:2px 6px', 'white-space:pre-line', 'text-align:left',
       'max-width:260px',
       'text-shadow:0 1px 2px #000', 'box-shadow:0 1px 4px rgba(0,0,0,.5)',

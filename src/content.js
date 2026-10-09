@@ -238,7 +238,7 @@
     panel.appendChild(hd);
 
     var tabs = h('div', 'tabs');
-    [['peek', '透视'], ['deck', '记牌'], ['reward', '奖励'], ['setting', '设置']].forEach(function (t, i) {
+    [['peek', '透视/记牌'], ['reward', '奖励'], ['setting', '设置']].forEach(function (t, i) {
       var b = h('button', i === 0 ? 'on' : '', t[1]);
       b.dataset.tab = t[0];
       tabs.appendChild(b);
@@ -247,33 +247,28 @@
 
     var body = h('div', 'body');
 
-    /* —— 透视页 */
+    /* —— 透视 / 记牌页（合并：各座位手牌 + 已亮明牌汇总 + 出牌流水） */
     var secPeek = h('div', 'sec on');
     secPeek.dataset.sec = 'peek';
-    els.peekBox = h('div', null, '');
-    secPeek.appendChild(els.peekBox);
-    els.peekProbe = h('button', 'btn', '实测一次（看服务端给不给暗牌牌面）');
-    secPeek.appendChild(els.peekProbe);
-    els.peekReset = h('button', 'btn', '重置本局透视');
-    secPeek.appendChild(els.peekReset);
-    body.appendChild(secPeek);
-
-    /* —— 记牌页 */
-    var secDeck = h('div', 'sec');
-    secDeck.dataset.sec = 'deck';
     els.statLine = h('div', 'row');
     els.statLine.innerHTML = '<span class="muted">连接</span><span id="sgs-conn">—</span>';
-    secDeck.appendChild(els.statLine);
+    secPeek.appendChild(els.statLine);
+    els.peekBox = h('div', null, '');
+    secPeek.appendChild(els.peekBox);
     els.protoLine = h('div', 'sub', '');
-    secDeck.appendChild(els.protoLine);
+    secPeek.appendChild(els.protoLine);
     els.protoList = h('div', 'log');
-    secDeck.appendChild(els.protoList);
+    secPeek.appendChild(els.protoList);
     els.rankGrid = h('div', 'grid');
     els.rankGrid.style.display = 'none';
-    secDeck.appendChild(els.rankGrid);
+    secPeek.appendChild(els.rankGrid);
     els.recent = h('div', 'log');
-    secDeck.appendChild(els.recent);
-    body.appendChild(secDeck);
+    secPeek.appendChild(els.recent);
+    els.peekProbe = h('button', 'btn', '实测一次（看服务端给不给暗牌牌面）');
+    secPeek.appendChild(els.peekProbe);
+    els.resetBtn = h('button', 'btn', '重置本局透视 / 记牌');
+    secPeek.appendChild(els.resetBtn);
+    body.appendChild(secPeek);
 
     /* —— 奖励页 */
     var secReward = h('div', 'sec');
@@ -316,8 +311,7 @@
       return inp;
     }
 
-    sw('记牌器', 'deckToggle');
-    sw('透视（各座位手牌）', 'peekToggle');
+    sw('透视 / 记牌（各座位手牌 + 已亮明牌）', 'deckToggle');
     sw('座位下方贴牌面（对局中）', 'peekOverlayToggle');
     sw('山河图显示事件名', 'rogueToggle');
     sw('山河图：集市入口常显', 'rogueShopToggle');
@@ -342,8 +336,6 @@
     els.winList = h('div', 'log');
     secSet.appendChild(els.winList);
 
-    els.resetBtn = h('button', 'btn', '重置本局记牌');
-    secSet.appendChild(els.resetBtn);
     els.bridgeInfo = h('div', 'log');
     secSet.appendChild(els.bridgeInfo);
     body.appendChild(secSet);
@@ -366,7 +358,13 @@
       });
     };
 
-    els.deckToggle.onchange = function () { settings.deckEnabled = this.checked; saveSettings(); pushConfig(); scheduleRender(); };
+    els.deckToggle.onchange = function () {
+      settings.deckEnabled = this.checked;
+      settings.peekEnabled = this.checked;
+      saveSettings(); pushConfig();
+      if (M.peek) M.peek.setEnabled(this.checked);
+      scheduleRender();
+    };
     els.rewardToggle.onchange = function () {
       settings.rewardsEnabled = this.checked; saveSettings();
       if (M.rewards) M.rewards.setEnabled(this.checked);
@@ -401,14 +399,13 @@
     els.skipAskToggle.onchange = function () {
       settings.skipAskEnabled = this.checked; saveSettings(); pushConfig(); scheduleRender();
     };
-    els.resetBtn.onclick = function () { if (M.deck) M.deck.reset(); send('reset-deck'); scheduleRender(); };
-    els.peekProbe.onclick = function () { send('peek-probe'); scheduleRender(); };
-    els.peekReset.onclick = function () { send('reset-peek'); scheduleRender(); };
-    els.peekToggle.onchange = function () {
-      settings.peekEnabled = this.checked; saveSettings(); pushConfig();
-      if (M.peek) M.peek.setEnabled(this.checked);
+    els.resetBtn.onclick = function () {
+      if (M.deck) M.deck.reset();
+      send('reset-deck');
+      send('reset-peek');
       scheduleRender();
     };
+    els.peekProbe.onclick = function () { send('peek-probe'); scheduleRender(); };
     els.peekOverlayToggle.onchange = function () {
       settings.peekOverlay = this.checked; saveSettings();
       if (M.peek) M.peek.setOverlay(this.checked);
@@ -615,8 +612,7 @@
       setTimeout(pushConfig, 3000);
 
       if (IS_TOP && els.deckToggle) {
-        els.deckToggle.checked = settings.deckEnabled !== false;
-        if (els.peekToggle) els.peekToggle.checked = settings.peekEnabled !== false;
+        els.deckToggle.checked = settings.deckEnabled !== false && settings.peekEnabled !== false;
         if (els.peekOverlayToggle) els.peekOverlayToggle.checked = !!settings.peekOverlay;
         els.rewardToggle.checked = !!settings.rewardsEnabled;
         if (els.claimToggle) els.claimToggle.checked = !!settings.claimsEnabled;

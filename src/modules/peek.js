@@ -34,6 +34,12 @@
     return '#' + id;
   }
 
+  // 四字及以上牌名只显示前两字（乐不思蜀→乐不），省浮层宽度
+  function shortName(id) {
+    var nm = nameOf(id);
+    return nm.length >= 4 ? nm.slice(0, 2) : nm;
+  }
+
   // 已知集合：{ id: 张数 }
   function expand(list) {
     var out = Object.create(null);
@@ -59,10 +65,11 @@
     return n;
   }
 
-  function chip(id, cls) {
+  function chip(id, cls, short) {
     var el = document.createElement('span');
     el.className = 'chip' + (cls ? ' ' + cls : '');
-    el.textContent = nameOf(id);
+    el.textContent = short ? shortName(id) : nameOf(id);
+    el.title = nameOf(id);
     return el;
   }
 
@@ -92,7 +99,7 @@
       known += Object.keys(s.known || {}).length;
       unknown += s.unknown || 0;
     });
-    head.textContent = '座位 ' + seats.length + ' · 已知手牌 ' + known + ' 张 / 未知 ' + unknown +
+    head.textContent = '场上 ' + seats.length + ' 人 · 已知手牌 ' + known + ' 张 / 未知 ' + unknown +
       ' 张 · 手牌移动 ' + (state.moves || 0) + ' 次';
     container.appendChild(head);
 
@@ -119,7 +126,7 @@
       var sh = document.createElement('div');
       sh.className = 'sh';
       var left = document.createElement('span');
-      left.textContent = '座位' + s.seat + (s.name ? ' ' + s.name : '') + (s.self ? '（你）' : '') +
+      left.textContent = s.no + '号位' + (s.name ? ' ' + s.name : '') + (s.self ? '（你）' : '') +
         (s.dead ? ' · 阵亡' : '');
       var right = document.createElement('span');
       right.textContent = '手牌 ' + s.count + (s.unknown ? '（未知 ' + s.unknown + '）' : '');
@@ -134,7 +141,7 @@
         cn.appendChild(chipText('无手牌', 'un'));
       } else {
         ids.sort(function (a, b) { return a - b; });
-        ids.forEach(function (id) { cn.appendChild(chip(id, s.mingIds && s.mingIds[id] ? 'ming' : '')); });
+        ids.forEach(function (id) { cn.appendChild(chip(id, s.mingIds && s.mingIds[id] ? 'ming' : '', true)); });
         if (s.unknown) cn.appendChild(chipText('未知 ×' + s.unknown, 'un'));
       }
       box.appendChild(cn);
@@ -187,8 +194,21 @@
 
       var box = document.createElement('div');
       box.style.cssText = labelStyle();
-      box.style.left = (cvs.left + s.rect.x + s.rect.w / 2) + 'px';
-      box.style.top = (cvs.top + s.rect.y + s.rect.h + 3) + 'px';
+      // 紧贴座位号下面：优先量座位号小图，其次按头像底边推，最后才退回座位 UI 底边
+      var anchorX, anchorY;
+      if (s.seatNo) {
+        anchorX = s.seatNo.x + s.seatNo.w / 2;
+        anchorY = s.seatNo.y + s.seatNo.h + 2;
+      } else if (s.avatar) {
+        // 座位号小图贴在头像正下方（AVATAR_MAX_HEIGHT + 5），估一个号位带高度
+        anchorX = s.avatar.x + s.avatar.w / 2;
+        anchorY = s.avatar.y + s.avatar.h + 26;
+      } else {
+        anchorX = s.rect.x + s.rect.w / 2;
+        anchorY = s.rect.y + s.rect.h + 3;
+      }
+      box.style.left = (cvs.left + anchorX) + 'px';
+      box.style.top = (cvs.top + anchorY) + 'px';
 
       var head = document.createElement('div');
       head.textContent = '手牌 ' + s.count + (s.unknown ? ' · 未知 ' + s.unknown : '');
@@ -198,14 +218,23 @@
       var ids = Object.keys(s.known || {}).map(Number).sort(function (a, b) { return a - b; });
       if (ids.length) {
         var line = document.createElement('div');
-        ids.forEach(function (id) {
+        var MAX = 6;                                  // 牌数过多就折叠：只列前 6 张，其余并成 +N
+        ids.slice(0, MAX).forEach(function (id) {
           var sp = document.createElement('span');
-          sp.textContent = nameOf(id);
+          sp.textContent = shortName(id);
+          sp.title = nameOf(id);
           sp.style.cssText = 'display:inline-block;margin:0 1px;padding:0 3px;border-radius:2px;' +
             'background:#3a2f1e;border:1px solid #6b5a3a' +
             (s.mingIds && s.mingIds[id] ? ';background:#2f4a2a;border-color:#4a7a3a;color:#bfe0a0' : '');
           line.appendChild(sp);
         });
+        if (ids.length > MAX) {
+          var more = document.createElement('span');
+          more.textContent = '+' + (ids.length - MAX);
+          more.style.cssText = 'display:inline-block;margin:0 1px;padding:0 3px;border-radius:2px;' +
+            'background:#241d16;border:1px dashed #6b5a3a;color:#d8b871';
+          line.appendChild(more);
+        }
         box.appendChild(line);
       }
       overlayEl.appendChild(box);
@@ -217,11 +246,13 @@
   function signature(st) {
     var parts = [st.moves, st.hiddenIds, st.mySeat];
     (st.seats || []).forEach(function (s) {
-      parts.push(s.seat, s.count, s.name, (s.knownIds || []).length, (s.showIds || []).length,
+      parts.push(s.seat, s.fixedViewId, s.count, s.name, (s.knownIds || []).length, (s.showIds || []).length,
         (s.visibleIds || []).length, (s.mingIds || []).length, (s.equipIds || []).length,
         (s.judgeIds || []).length,
-        s.rect ? (s.rect.x + ',' + s.rect.y + ',' + s.rect.w + ',' + s.rect.h + ',' + (s.rect.vis ? 1 : 0)) : '-');
-    });
+      s.rect ? (s.rect.x + ',' + s.rect.y + ',' + s.rect.w + ',' + s.rect.h + ',' + (s.rect.vis ? 1 : 0)) : '-',
+      s.seatNo ? (s.seatNo.x + ',' + s.seatNo.y + ',' + s.seatNo.w + ',' + s.seatNo.h) : '-',
+      s.avatar ? (s.avatar.x + ',' + s.avatar.y + ',' + s.avatar.w + ',' + s.avatar.h) : '-');
+  });
     (st.protoHands || []).forEach(function (p) {
       parts.push('p', p.seat, p.count, (p.knownIds || []).join('.'));
     });
@@ -245,6 +276,8 @@
         var unknown = Math.max(0, (s.count || 0) - countOf(known));
         return {
           seat: s.seat,
+          // 游戏界面显示的号位：FixedViewId（1 起）优先，取不到退回 Index+1
+          no: (s.fixedViewId > 0 ? s.fixedViewId : (s.seat + 1)),
           name: s.name || '',
           count: s.count || 0,
           self: !!s.self,
@@ -254,7 +287,9 @@
           unknown: unknown,
           equip: s.equipIds || [],
           judge: s.judgeIds || [],
-          rect: s.rect || null
+          rect: s.rect || null,
+          seatNo: s.seatNo || null,
+          avatar: s.avatar || null
         };
       });
       // 座位模型读不到时，用协议追踪的结果兜底
@@ -273,10 +308,10 @@
         }
         var known = expand(p.knownIds);
         state.seats.push({
-          seat: p.seat, name: '', count: p.count, self: !!p.self, dead: false,
+          seat: p.seat, no: p.seat + 1, name: '', count: p.count, self: !!p.self, dead: false,
           known: known, mingIds: Object.create(null),
           unknown: Math.max(0, p.count - countOf(known)),
-          equip: [], judge: []
+          equip: [], judge: [], seatNo: null, avatar: null
         });
       });
       state.seats.sort(function (a, b) { return a.seat - b.seat; });

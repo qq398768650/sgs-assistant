@@ -941,11 +941,7 @@
     return c;
   }
 
-  function peekSeatRect(idx) {
-    var c = peekSeatContainer();
-    if (!c) return null;
-    var ui = null;
-    try { ui = c.GetSeatUiByIndex(idx); } catch (e) { return null; }
+  function peekRectOf(ui) {
     if (!ui) return null;
     var p = L.pos(ui), s = L.size(ui);
     if (!s.w || !s.h) return null;
@@ -955,14 +951,56 @@
     return { x: p.x, y: p.y, w: s.w, h: s.h, vis: L.visible(ui) !== false };
   }
 
-  function peekReadSeat(o, idx, count) {
+  function peekSeatRect(idx) {
+    var c = peekSeatContainer();
+    if (!c) return null;
+    var ui = null;
+    try { ui = c.GetSeatUiByIndex(idx); } catch (e) { return null; }
+    return peekRectOf(ui);
+  }
+
+  // 座位号小图（seatUI.otherTopManager.seatIndex，贴的是 Player_Index_N）。
+  // 浮层要「紧贴座位号下面」，所以直接量这张小图的矩形，而不是整个座位 UI 的底边。
+  // 校验它确实落在该座位 UI 矩形内（允许一点外扩），否则视为没量到。
+  function peekSeatNoRect(ui, rect) {
+    if (!ui) return null;
+    var node = null;
+    try { node = ui.otherTopManager && ui.otherTopManager.seatIndex; } catch (e) {}
+    if (!node) return null;
+    var p = L.pos(node), s = L.size(node);
+    if (!p.x && !p.y) return null;
+    if (rect && (p.x < rect.x - 80 || p.x > rect.x + rect.w + 80 ||
+                 p.y < rect.y - 80 || p.y > rect.y + rect.h + 80)) return null;
+    return { x: p.x, y: p.y, w: s.w || 0, h: s.h || 0 };
+  }
+
+  // 头像矩形：座位号就在头像正下方（Ins.layout 里 pos 到 AVATAR_MAX_HEIGHT+5），
+  // 量不到座位号小图时用它兜底定位。
+  function peekAvatarRect(ui) {
+    if (!ui) return null;
+    var node = null;
+    try { node = ui.seatAvatar || ui.seatAvatarSprite; } catch (e) {}
+    if (!node) return null;
+    var p = L.pos(node), s = L.size(node);
+    if (!s.w || !s.h) return null;
+    if (!p.x && !p.y) return null;
+    return { x: p.x, y: p.y, w: s.w, h: s.h };
+  }
+
+  function peekReadSeat(o, idx, count, ui) {
+    var rect = ui ? peekRectOf(ui) : peekSeatRect(idx);
     return {
       seat: idx,
+      // FixedViewId 才是游戏界面上显示的号位（1 起、从首座/主公按顺序编号）；
+      // Index 是 0 起的绝对座位，两者在换座/山河图里不一致。
+      fixedViewId: Number(peekTry(function () { return o.FixedViewId; }, 0)) || 0,
       count: count,
       self: !!peekTry(function () { return o.IsSelf; }, false),
       dead: !!peekTry(function () { return o.IsDead; }, false),
       canView: !!peekTry(function () { return o.CanViewHandCard; }, false),
-      rect: peekSeatRect(idx),
+      rect: rect,
+      seatNo: ui ? peekSeatNoRect(ui, rect) : null,
+      avatar: ui ? peekAvatarRect(ui) : null,
       name: String(peekTry(function () {
         var g = o.General;
         if (g) { var a = g.CardName || g.Name || g.ShowName; if (a) return a; }
@@ -980,25 +1018,49 @@
     };
   }
 
-  // 座位实例都是 Laya.EventDispatcher（会派发 Mv.DRAW / 监听 SHOW_HAND_CARDS），
-  // 因此一定落在 MGR.seats 里（MGR.cap 会被大厅塞满，座位必须单独收）。
-  // 倒序取「每个座位最新出现的那个实例」，避免拿到上一局的残留。
+  // 座位 UI 容器（Bqt）自己维护 seatUIs：只为「真正入座」的座位创建 UI，
+  // 所以从它读到的就是当前场上的座位，人数变了自动跟着变，且不会混进上一局的残留。
+  // 读不到容器时再退回 MGR 捕获的座位实例池（倒序取每个座位最新的实例）。
   function peekSeatModel() {
     var out = [];
     if (!window.Laya) return out;
-    var pool = (window.__SGS_MGR__ && window.__SGS_MGR__.seats) || [];
-    var seen = {};
-    for (var i = pool.length - 1; i >= 0; i--) {
-      var o = pool[i];
-      if (!o) continue;
-      var idx = peekTry(function () { return o.Index; }, -1);
-      if (!peekValidSeat(idx) || seen[idx]) continue;
-      var hc = peekTry(function () { return o.HandCardCount; }, null);
-      if (typeof hc !== 'number') continue;
-      if (!Array.isArray(peekTry(function () { return o.HandCards; }, null))) continue;
-      seen[idx] = 1;
-      out.push(peekReadSeat(o, idx, hc));
+
+    var c = peekSeatContainer();
+    if (c && typeof c.getSeatUIs === 'function') {
+      var uis = null;
+      try { uis = c.getSeatUIs(); } catch (e) {}
+      if (Array.isArray(uis)) {
+        for (var i = 0; i < uis.length; i++) {
+          var ui = uis[i];
+          var o = null;
+          try { o = ui && ui.Seat; } catch (e) {}
+          if (!o) continue;
+          var idx = peekTry(function () { return o.Index; }, -1);
+          if (!peekValidSeat(idx)) continue;
+          var hc = peekTry(function () { return o.HandCardCount; }, null);
+          if (typeof hc !== 'number') continue;
+          if (!Array.isArray(peekTry(function () { return o.HandCards; }, null))) continue;
+          out.push(peekReadSeat(o, idx, hc, ui));
+        }
+      }
     }
+
+    if (!out.length) {
+      var pool = (window.__SGS_MGR__ && window.__SGS_MGR__.seats) || [];
+      var seen = {};
+      for (var j = pool.length - 1; j >= 0; j--) {
+        var p = pool[j];
+        if (!p) continue;
+        var pidx = peekTry(function () { return p.Index; }, -1);
+        if (!peekValidSeat(pidx) || seen[pidx]) continue;
+        var phc = peekTry(function () { return p.HandCardCount; }, null);
+        if (typeof phc !== 'number') continue;
+        if (!Array.isArray(peekTry(function () { return p.HandCards; }, null))) continue;
+        seen[pidx] = 1;
+        out.push(peekReadSeat(p, pidx, phc, null));
+      }
+    }
+
     out.sort(function (a, b) { return a.seat - b.seat; });
     return out;
   }
@@ -1008,6 +1070,72 @@
     for (var i = 0; i < seats.length; i++) if (seats[i].self) return seats[i].seat;
     return GAME.mySeat;
   }
+
+  /* ---- 诊断：把座位 UI 的实际结构吐出来（量座位号位置用） ---- */
+  function peekTexName(n) {
+    try {
+      var t = n.texture || n.skin || n._texture || n.source;
+      if (!t) return '';
+      if (typeof t === 'string') return t;
+      return String(t.url || t._url || t.name || (t.source && (t.source.url || t.source._url)) || '');
+    } catch (e) { return ''; }
+  }
+
+  function peekDumpNode(n, depth, budget) {
+    if (!n || depth < 0 || budget.n <= 0) return null;
+    budget.n--;
+    var o = {
+      cls: L.cls(n),
+      name: L.nameOf(n),
+      text: L.ownText(n),
+      tex: peekTexName(n),
+      x: L.pos(n).x, y: L.pos(n).y,
+      w: L.size(n).w, h: L.size(n).h,
+      vis: L.visible(n) !== false
+    };
+    if (depth > 0) {
+      var kids = [], k = 0;
+      try { k = n.numChildren || 0; } catch (e) {}
+      for (var i = 0; i < k && kids.length < 12; i++) {
+        var c = null;
+        try { c = n.getChildAt(i); } catch (e) {}
+        var d = peekDumpNode(c, depth - 1, budget);
+        if (d) kids.push(d);
+      }
+      if (kids.length) o.kids = kids;
+    }
+    return o;
+  }
+
+  PEEK.dump = function () {
+    var c = peekSeatContainer();
+    var uis = null;
+    try { uis = c && c.getSeatUIs ? c.getSeatUIs() : null; } catch (e) {}
+    var out = { at: Date.now(), mySeat: GAME.mySeat, hasContainer: !!c, seats: [] };
+    if (!Array.isArray(uis)) return out;
+    for (var i = 0; i < uis.length; i++) {
+      var ui = uis[i];
+      var o = null;
+      try { o = ui && ui.Seat; } catch (e) {}
+      if (!o) continue;
+      var rect = peekRectOf(ui);
+      var noNode = null;
+      try { noNode = ui.otherTopManager && ui.otherTopManager.seatIndex; } catch (e) {}
+      var avatar = null;
+      try { avatar = ui.seatAvatar; } catch (e) {}
+      out.seats.push({
+        index: peekTry(function () { return o.Index; }, -1),
+        fixedViewId: peekTry(function () { return o.FixedViewId; }, 0),
+        self: peekTry(function () { return o.IsSelf; }, false),
+        uiRect: rect,
+        seatNo: noNode ? { x: L.pos(noNode).x, y: L.pos(noNode).y, w: L.size(noNode).w, h: L.size(noNode).h, tex: peekTexName(noNode) } : null,
+        avatar: avatar ? { x: L.pos(avatar).x, y: L.pos(avatar).y, w: L.size(avatar).w, h: L.size(avatar).h } : null,
+        tree: peekDumpNode(ui, 2, { n: 80 })
+      });
+    }
+    return out;
+  };
+  window.__SGS_PEEK_DUMP__ = PEEK.dump;
 
   PEEK.snapshot = function () {
     var seats = peekSeatModel();

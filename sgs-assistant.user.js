@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三国杀助手
 // @namespace    https://github.com/qq398768650/sgs-assistant
-// @version      0.3.5
+// @version      0.3.8
 // @description  透视 · 记牌器 · 自动领奖 · 弹窗治理 · 山河图事件名。只读监听通信，不修改游戏数据。
 // @author       qq398768650
 // @match        *://*.sanguosha.com/*
@@ -272,6 +272,12 @@
     return '#' + id;
   }
 
+  // 四字及以上牌名只显示前两字（乐不思蜀→乐不），省浮层宽度
+  function shortName(id) {
+    var nm = nameOf(id);
+    return nm.length >= 4 ? nm.slice(0, 2) : nm;
+  }
+
   // 已知集合：{ id: 张数 }
   function expand(list) {
     var out = Object.create(null);
@@ -297,10 +303,11 @@
     return n;
   }
 
-  function chip(id, cls) {
+  function chip(id, cls, short) {
     var el = document.createElement('span');
     el.className = 'chip' + (cls ? ' ' + cls : '');
-    el.textContent = nameOf(id);
+    el.textContent = short ? shortName(id) : nameOf(id);
+    el.title = nameOf(id);
     return el;
   }
 
@@ -330,7 +337,7 @@
       known += Object.keys(s.known || {}).length;
       unknown += s.unknown || 0;
     });
-    head.textContent = '座位 ' + seats.length + ' · 已知手牌 ' + known + ' 张 / 未知 ' + unknown +
+    head.textContent = '场上 ' + seats.length + ' 人 · 已知手牌 ' + known + ' 张 / 未知 ' + unknown +
       ' 张 · 手牌移动 ' + (state.moves || 0) + ' 次';
     container.appendChild(head);
 
@@ -357,7 +364,7 @@
       var sh = document.createElement('div');
       sh.className = 'sh';
       var left = document.createElement('span');
-      left.textContent = '座位' + s.seat + (s.name ? ' ' + s.name : '') + (s.self ? '（你）' : '') +
+      left.textContent = s.no + '号位' + (s.name ? ' ' + s.name : '') + (s.self ? '（你）' : '') +
         (s.dead ? ' · 阵亡' : '');
       var right = document.createElement('span');
       right.textContent = '手牌 ' + s.count + (s.unknown ? '（未知 ' + s.unknown + '）' : '');
@@ -372,7 +379,7 @@
         cn.appendChild(chipText('无手牌', 'un'));
       } else {
         ids.sort(function (a, b) { return a - b; });
-        ids.forEach(function (id) { cn.appendChild(chip(id, s.mingIds && s.mingIds[id] ? 'ming' : '')); });
+        ids.forEach(function (id) { cn.appendChild(chip(id, s.mingIds && s.mingIds[id] ? 'ming' : '', true)); });
         if (s.unknown) cn.appendChild(chipText('未知 ×' + s.unknown, 'un'));
       }
       box.appendChild(cn);
@@ -425,8 +432,21 @@
 
       var box = document.createElement('div');
       box.style.cssText = labelStyle();
-      box.style.left = (cvs.left + s.rect.x + s.rect.w / 2) + 'px';
-      box.style.top = (cvs.top + s.rect.y + s.rect.h + 3) + 'px';
+      // 紧贴座位号下面：优先量座位号小图，其次按头像底边推，最后才退回座位 UI 底边
+      var anchorX, anchorY;
+      if (s.seatNo) {
+        anchorX = s.seatNo.x + s.seatNo.w / 2;
+        anchorY = s.seatNo.y + s.seatNo.h + 2;
+      } else if (s.avatar) {
+        // 座位号小图贴在头像正下方（AVATAR_MAX_HEIGHT + 5），估一个号位带高度
+        anchorX = s.avatar.x + s.avatar.w / 2;
+        anchorY = s.avatar.y + s.avatar.h + 26;
+      } else {
+        anchorX = s.rect.x + s.rect.w / 2;
+        anchorY = s.rect.y + s.rect.h + 3;
+      }
+      box.style.left = (cvs.left + anchorX) + 'px';
+      box.style.top = (cvs.top + anchorY) + 'px';
 
       var head = document.createElement('div');
       head.textContent = '手牌 ' + s.count + (s.unknown ? ' · 未知 ' + s.unknown : '');
@@ -436,14 +456,23 @@
       var ids = Object.keys(s.known || {}).map(Number).sort(function (a, b) { return a - b; });
       if (ids.length) {
         var line = document.createElement('div');
-        ids.forEach(function (id) {
+        var MAX = 6;                                  // 牌数过多就折叠：只列前 6 张，其余并成 +N
+        ids.slice(0, MAX).forEach(function (id) {
           var sp = document.createElement('span');
-          sp.textContent = nameOf(id);
+          sp.textContent = shortName(id);
+          sp.title = nameOf(id);
           sp.style.cssText = 'display:inline-block;margin:0 1px;padding:0 3px;border-radius:2px;' +
             'background:#3a2f1e;border:1px solid #6b5a3a' +
             (s.mingIds && s.mingIds[id] ? ';background:#2f4a2a;border-color:#4a7a3a;color:#bfe0a0' : '');
           line.appendChild(sp);
         });
+        if (ids.length > MAX) {
+          var more = document.createElement('span');
+          more.textContent = '+' + (ids.length - MAX);
+          more.style.cssText = 'display:inline-block;margin:0 1px;padding:0 3px;border-radius:2px;' +
+            'background:#241d16;border:1px dashed #6b5a3a;color:#d8b871';
+          line.appendChild(more);
+        }
         box.appendChild(line);
       }
       overlayEl.appendChild(box);
@@ -455,11 +484,13 @@
   function signature(st) {
     var parts = [st.moves, st.hiddenIds, st.mySeat];
     (st.seats || []).forEach(function (s) {
-      parts.push(s.seat, s.count, s.name, (s.knownIds || []).length, (s.showIds || []).length,
+      parts.push(s.seat, s.fixedViewId, s.count, s.name, (s.knownIds || []).length, (s.showIds || []).length,
         (s.visibleIds || []).length, (s.mingIds || []).length, (s.equipIds || []).length,
         (s.judgeIds || []).length,
-        s.rect ? (s.rect.x + ',' + s.rect.y + ',' + s.rect.w + ',' + s.rect.h + ',' + (s.rect.vis ? 1 : 0)) : '-');
-    });
+      s.rect ? (s.rect.x + ',' + s.rect.y + ',' + s.rect.w + ',' + s.rect.h + ',' + (s.rect.vis ? 1 : 0)) : '-',
+      s.seatNo ? (s.seatNo.x + ',' + s.seatNo.y + ',' + s.seatNo.w + ',' + s.seatNo.h) : '-',
+      s.avatar ? (s.avatar.x + ',' + s.avatar.y + ',' + s.avatar.w + ',' + s.avatar.h) : '-');
+  });
     (st.protoHands || []).forEach(function (p) {
       parts.push('p', p.seat, p.count, (p.knownIds || []).join('.'));
     });
@@ -483,6 +514,8 @@
         var unknown = Math.max(0, (s.count || 0) - countOf(known));
         return {
           seat: s.seat,
+          // 游戏界面显示的号位：FixedViewId（1 起）优先，取不到退回 Index+1
+          no: (s.fixedViewId > 0 ? s.fixedViewId : (s.seat + 1)),
           name: s.name || '',
           count: s.count || 0,
           self: !!s.self,
@@ -492,7 +525,9 @@
           unknown: unknown,
           equip: s.equipIds || [],
           judge: s.judgeIds || [],
-          rect: s.rect || null
+          rect: s.rect || null,
+          seatNo: s.seatNo || null,
+          avatar: s.avatar || null
         };
       });
       // 座位模型读不到时，用协议追踪的结果兜底
@@ -511,10 +546,10 @@
         }
         var known = expand(p.knownIds);
         state.seats.push({
-          seat: p.seat, name: '', count: p.count, self: !!p.self, dead: false,
+          seat: p.seat, no: p.seat + 1, name: '', count: p.count, self: !!p.self, dead: false,
           known: known, mingIds: Object.create(null),
           unknown: Math.max(0, p.count - countOf(known)),
-          equip: [], judge: []
+          equip: [], judge: [], seatNo: null, avatar: null
         });
       });
       state.seats.sort(function (a, b) { return a.seat - b.seat; });
@@ -820,8 +855,8 @@
     el.style.cssText = [
       'position:absolute', 'left:0', 'top:0', 'transform:translate(0px,0px)',
       'font:600 11px/1.45 "Microsoft YaHei",sans-serif',
-      'color:#ffe9b0', 'background:rgba(20,14,10,.88)',
-      'border:1px solid rgba(200,164,92,.75)', 'border-radius:4px',
+      'color:#ffe9b0', 'background:rgba(20,14,10,.5)',
+      'border:1px solid rgba(200,164,92,.5)', 'border-radius:4px',
       'padding:2px 6px', 'white-space:pre-line', 'text-align:left',
       'max-width:260px',
       'text-shadow:0 1px 2px #000', 'box-shadow:0 1px 4px rgba(0,0,0,.5)',
@@ -1163,7 +1198,7 @@
     panel.appendChild(hd);
 
     var tabs = h('div', 'tabs');
-    [['peek', '透视'], ['deck', '记牌'], ['reward', '奖励'], ['setting', '设置']].forEach(function (t, i) {
+    [['peek', '透视/记牌'], ['reward', '奖励'], ['setting', '设置']].forEach(function (t, i) {
       var b = h('button', i === 0 ? 'on' : '', t[1]);
       b.dataset.tab = t[0];
       tabs.appendChild(b);
@@ -1172,33 +1207,28 @@
 
     var body = h('div', 'body');
 
-    /* —— 透视页 */
+    /* —— 透视 / 记牌页（合并：各座位手牌 + 已亮明牌汇总 + 出牌流水） */
     var secPeek = h('div', 'sec on');
     secPeek.dataset.sec = 'peek';
-    els.peekBox = h('div', null, '');
-    secPeek.appendChild(els.peekBox);
-    els.peekProbe = h('button', 'btn', '实测一次（看服务端给不给暗牌牌面）');
-    secPeek.appendChild(els.peekProbe);
-    els.peekReset = h('button', 'btn', '重置本局透视');
-    secPeek.appendChild(els.peekReset);
-    body.appendChild(secPeek);
-
-    /* —— 记牌页 */
-    var secDeck = h('div', 'sec');
-    secDeck.dataset.sec = 'deck';
     els.statLine = h('div', 'row');
     els.statLine.innerHTML = '<span class="muted">连接</span><span id="sgs-conn">—</span>';
-    secDeck.appendChild(els.statLine);
+    secPeek.appendChild(els.statLine);
+    els.peekBox = h('div', null, '');
+    secPeek.appendChild(els.peekBox);
     els.protoLine = h('div', 'sub', '');
-    secDeck.appendChild(els.protoLine);
+    secPeek.appendChild(els.protoLine);
     els.protoList = h('div', 'log');
-    secDeck.appendChild(els.protoList);
+    secPeek.appendChild(els.protoList);
     els.rankGrid = h('div', 'grid');
     els.rankGrid.style.display = 'none';
-    secDeck.appendChild(els.rankGrid);
+    secPeek.appendChild(els.rankGrid);
     els.recent = h('div', 'log');
-    secDeck.appendChild(els.recent);
-    body.appendChild(secDeck);
+    secPeek.appendChild(els.recent);
+    els.peekProbe = h('button', 'btn', '实测一次（看服务端给不给暗牌牌面）');
+    secPeek.appendChild(els.peekProbe);
+    els.resetBtn = h('button', 'btn', '重置本局透视 / 记牌');
+    secPeek.appendChild(els.resetBtn);
+    body.appendChild(secPeek);
 
     /* —— 奖励页 */
     var secReward = h('div', 'sec');
@@ -1241,8 +1271,7 @@
       return inp;
     }
 
-    sw('记牌器', 'deckToggle');
-    sw('透视（各座位手牌）', 'peekToggle');
+    sw('透视 / 记牌（各座位手牌 + 已亮明牌）', 'deckToggle');
     sw('座位下方贴牌面（对局中）', 'peekOverlayToggle');
     sw('山河图显示事件名', 'rogueToggle');
     sw('山河图：集市入口常显', 'rogueShopToggle');
@@ -1267,8 +1296,6 @@
     els.winList = h('div', 'log');
     secSet.appendChild(els.winList);
 
-    els.resetBtn = h('button', 'btn', '重置本局记牌');
-    secSet.appendChild(els.resetBtn);
     els.bridgeInfo = h('div', 'log');
     secSet.appendChild(els.bridgeInfo);
     body.appendChild(secSet);
@@ -1291,7 +1318,13 @@
       });
     };
 
-    els.deckToggle.onchange = function () { settings.deckEnabled = this.checked; saveSettings(); pushConfig(); scheduleRender(); };
+    els.deckToggle.onchange = function () {
+      settings.deckEnabled = this.checked;
+      settings.peekEnabled = this.checked;
+      saveSettings(); pushConfig();
+      if (M.peek) M.peek.setEnabled(this.checked);
+      scheduleRender();
+    };
     els.rewardToggle.onchange = function () {
       settings.rewardsEnabled = this.checked; saveSettings();
       if (M.rewards) M.rewards.setEnabled(this.checked);
@@ -1326,14 +1359,13 @@
     els.skipAskToggle.onchange = function () {
       settings.skipAskEnabled = this.checked; saveSettings(); pushConfig(); scheduleRender();
     };
-    els.resetBtn.onclick = function () { if (M.deck) M.deck.reset(); send('reset-deck'); scheduleRender(); };
-    els.peekProbe.onclick = function () { send('peek-probe'); scheduleRender(); };
-    els.peekReset.onclick = function () { send('reset-peek'); scheduleRender(); };
-    els.peekToggle.onchange = function () {
-      settings.peekEnabled = this.checked; saveSettings(); pushConfig();
-      if (M.peek) M.peek.setEnabled(this.checked);
+    els.resetBtn.onclick = function () {
+      if (M.deck) M.deck.reset();
+      send('reset-deck');
+      send('reset-peek');
       scheduleRender();
     };
+    els.peekProbe.onclick = function () { send('peek-probe'); scheduleRender(); };
     els.peekOverlayToggle.onchange = function () {
       settings.peekOverlay = this.checked; saveSettings();
       if (M.peek) M.peek.setOverlay(this.checked);
@@ -1540,8 +1572,7 @@
       setTimeout(pushConfig, 3000);
 
       if (IS_TOP && els.deckToggle) {
-        els.deckToggle.checked = settings.deckEnabled !== false;
-        if (els.peekToggle) els.peekToggle.checked = settings.peekEnabled !== false;
+        els.deckToggle.checked = settings.deckEnabled !== false && settings.peekEnabled !== false;
         if (els.peekOverlayToggle) els.peekOverlayToggle.checked = !!settings.peekOverlay;
         els.rewardToggle.checked = !!settings.rewardsEnabled;
         if (els.claimToggle) els.claimToggle.checked = !!settings.claimsEnabled;
@@ -2507,11 +2538,7 @@
     return c;
   }
 
-  function peekSeatRect(idx) {
-    var c = peekSeatContainer();
-    if (!c) return null;
-    var ui = null;
-    try { ui = c.GetSeatUiByIndex(idx); } catch (e) { return null; }
+  function peekRectOf(ui) {
     if (!ui) return null;
     var p = L.pos(ui), s = L.size(ui);
     if (!s.w || !s.h) return null;
@@ -2521,14 +2548,56 @@
     return { x: p.x, y: p.y, w: s.w, h: s.h, vis: L.visible(ui) !== false };
   }
 
-  function peekReadSeat(o, idx, count) {
+  function peekSeatRect(idx) {
+    var c = peekSeatContainer();
+    if (!c) return null;
+    var ui = null;
+    try { ui = c.GetSeatUiByIndex(idx); } catch (e) { return null; }
+    return peekRectOf(ui);
+  }
+
+  // 座位号小图（seatUI.otherTopManager.seatIndex，贴的是 Player_Index_N）。
+  // 浮层要「紧贴座位号下面」，所以直接量这张小图的矩形，而不是整个座位 UI 的底边。
+  // 校验它确实落在该座位 UI 矩形内（允许一点外扩），否则视为没量到。
+  function peekSeatNoRect(ui, rect) {
+    if (!ui) return null;
+    var node = null;
+    try { node = ui.otherTopManager && ui.otherTopManager.seatIndex; } catch (e) {}
+    if (!node) return null;
+    var p = L.pos(node), s = L.size(node);
+    if (!p.x && !p.y) return null;
+    if (rect && (p.x < rect.x - 80 || p.x > rect.x + rect.w + 80 ||
+                 p.y < rect.y - 80 || p.y > rect.y + rect.h + 80)) return null;
+    return { x: p.x, y: p.y, w: s.w || 0, h: s.h || 0 };
+  }
+
+  // 头像矩形：座位号就在头像正下方（Ins.layout 里 pos 到 AVATAR_MAX_HEIGHT+5），
+  // 量不到座位号小图时用它兜底定位。
+  function peekAvatarRect(ui) {
+    if (!ui) return null;
+    var node = null;
+    try { node = ui.seatAvatar || ui.seatAvatarSprite; } catch (e) {}
+    if (!node) return null;
+    var p = L.pos(node), s = L.size(node);
+    if (!s.w || !s.h) return null;
+    if (!p.x && !p.y) return null;
+    return { x: p.x, y: p.y, w: s.w, h: s.h };
+  }
+
+  function peekReadSeat(o, idx, count, ui) {
+    var rect = ui ? peekRectOf(ui) : peekSeatRect(idx);
     return {
       seat: idx,
+      // FixedViewId 才是游戏界面上显示的号位（1 起、从首座/主公按顺序编号）；
+      // Index 是 0 起的绝对座位，两者在换座/山河图里不一致。
+      fixedViewId: Number(peekTry(function () { return o.FixedViewId; }, 0)) || 0,
       count: count,
       self: !!peekTry(function () { return o.IsSelf; }, false),
       dead: !!peekTry(function () { return o.IsDead; }, false),
       canView: !!peekTry(function () { return o.CanViewHandCard; }, false),
-      rect: peekSeatRect(idx),
+      rect: rect,
+      seatNo: ui ? peekSeatNoRect(ui, rect) : null,
+      avatar: ui ? peekAvatarRect(ui) : null,
       name: String(peekTry(function () {
         var g = o.General;
         if (g) { var a = g.CardName || g.Name || g.ShowName; if (a) return a; }
@@ -2546,25 +2615,49 @@
     };
   }
 
-  // 座位实例都是 Laya.EventDispatcher（会派发 Mv.DRAW / 监听 SHOW_HAND_CARDS），
-  // 因此一定落在 MGR.seats 里（MGR.cap 会被大厅塞满，座位必须单独收）。
-  // 倒序取「每个座位最新出现的那个实例」，避免拿到上一局的残留。
+  // 座位 UI 容器（Bqt）自己维护 seatUIs：只为「真正入座」的座位创建 UI，
+  // 所以从它读到的就是当前场上的座位，人数变了自动跟着变，且不会混进上一局的残留。
+  // 读不到容器时再退回 MGR 捕获的座位实例池（倒序取每个座位最新的实例）。
   function peekSeatModel() {
     var out = [];
     if (!window.Laya) return out;
-    var pool = (window.__SGS_MGR__ && window.__SGS_MGR__.seats) || [];
-    var seen = {};
-    for (var i = pool.length - 1; i >= 0; i--) {
-      var o = pool[i];
-      if (!o) continue;
-      var idx = peekTry(function () { return o.Index; }, -1);
-      if (!peekValidSeat(idx) || seen[idx]) continue;
-      var hc = peekTry(function () { return o.HandCardCount; }, null);
-      if (typeof hc !== 'number') continue;
-      if (!Array.isArray(peekTry(function () { return o.HandCards; }, null))) continue;
-      seen[idx] = 1;
-      out.push(peekReadSeat(o, idx, hc));
+
+    var c = peekSeatContainer();
+    if (c && typeof c.getSeatUIs === 'function') {
+      var uis = null;
+      try { uis = c.getSeatUIs(); } catch (e) {}
+      if (Array.isArray(uis)) {
+        for (var i = 0; i < uis.length; i++) {
+          var ui = uis[i];
+          var o = null;
+          try { o = ui && ui.Seat; } catch (e) {}
+          if (!o) continue;
+          var idx = peekTry(function () { return o.Index; }, -1);
+          if (!peekValidSeat(idx)) continue;
+          var hc = peekTry(function () { return o.HandCardCount; }, null);
+          if (typeof hc !== 'number') continue;
+          if (!Array.isArray(peekTry(function () { return o.HandCards; }, null))) continue;
+          out.push(peekReadSeat(o, idx, hc, ui));
+        }
+      }
     }
+
+    if (!out.length) {
+      var pool = (window.__SGS_MGR__ && window.__SGS_MGR__.seats) || [];
+      var seen = {};
+      for (var j = pool.length - 1; j >= 0; j--) {
+        var p = pool[j];
+        if (!p) continue;
+        var pidx = peekTry(function () { return p.Index; }, -1);
+        if (!peekValidSeat(pidx) || seen[pidx]) continue;
+        var phc = peekTry(function () { return p.HandCardCount; }, null);
+        if (typeof phc !== 'number') continue;
+        if (!Array.isArray(peekTry(function () { return p.HandCards; }, null))) continue;
+        seen[pidx] = 1;
+        out.push(peekReadSeat(p, pidx, phc, null));
+      }
+    }
+
     out.sort(function (a, b) { return a.seat - b.seat; });
     return out;
   }
@@ -2574,6 +2667,72 @@
     for (var i = 0; i < seats.length; i++) if (seats[i].self) return seats[i].seat;
     return GAME.mySeat;
   }
+
+  /* ---- 诊断：把座位 UI 的实际结构吐出来（量座位号位置用） ---- */
+  function peekTexName(n) {
+    try {
+      var t = n.texture || n.skin || n._texture || n.source;
+      if (!t) return '';
+      if (typeof t === 'string') return t;
+      return String(t.url || t._url || t.name || (t.source && (t.source.url || t.source._url)) || '');
+    } catch (e) { return ''; }
+  }
+
+  function peekDumpNode(n, depth, budget) {
+    if (!n || depth < 0 || budget.n <= 0) return null;
+    budget.n--;
+    var o = {
+      cls: L.cls(n),
+      name: L.nameOf(n),
+      text: L.ownText(n),
+      tex: peekTexName(n),
+      x: L.pos(n).x, y: L.pos(n).y,
+      w: L.size(n).w, h: L.size(n).h,
+      vis: L.visible(n) !== false
+    };
+    if (depth > 0) {
+      var kids = [], k = 0;
+      try { k = n.numChildren || 0; } catch (e) {}
+      for (var i = 0; i < k && kids.length < 12; i++) {
+        var c = null;
+        try { c = n.getChildAt(i); } catch (e) {}
+        var d = peekDumpNode(c, depth - 1, budget);
+        if (d) kids.push(d);
+      }
+      if (kids.length) o.kids = kids;
+    }
+    return o;
+  }
+
+  PEEK.dump = function () {
+    var c = peekSeatContainer();
+    var uis = null;
+    try { uis = c && c.getSeatUIs ? c.getSeatUIs() : null; } catch (e) {}
+    var out = { at: Date.now(), mySeat: GAME.mySeat, hasContainer: !!c, seats: [] };
+    if (!Array.isArray(uis)) return out;
+    for (var i = 0; i < uis.length; i++) {
+      var ui = uis[i];
+      var o = null;
+      try { o = ui && ui.Seat; } catch (e) {}
+      if (!o) continue;
+      var rect = peekRectOf(ui);
+      var noNode = null;
+      try { noNode = ui.otherTopManager && ui.otherTopManager.seatIndex; } catch (e) {}
+      var avatar = null;
+      try { avatar = ui.seatAvatar; } catch (e) {}
+      out.seats.push({
+        index: peekTry(function () { return o.Index; }, -1),
+        fixedViewId: peekTry(function () { return o.FixedViewId; }, 0),
+        self: peekTry(function () { return o.IsSelf; }, false),
+        uiRect: rect,
+        seatNo: noNode ? { x: L.pos(noNode).x, y: L.pos(noNode).y, w: L.size(noNode).w, h: L.size(noNode).h, tex: peekTexName(noNode) } : null,
+        avatar: avatar ? { x: L.pos(avatar).x, y: L.pos(avatar).y, w: L.size(avatar).w, h: L.size(avatar).h } : null,
+        tree: peekDumpNode(ui, 2, { n: 80 })
+      });
+    }
+    return out;
+  };
+  window.__SGS_PEEK_DUMP__ = PEEK.dump;
 
   PEEK.snapshot = function () {
     var seats = peekSeatModel();
